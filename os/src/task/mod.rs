@@ -14,13 +14,17 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::MapPermission;
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
+use crate::mm::VirtAddr;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
+use crate::timer::get_time_us;
 
 pub use context::TaskContext;
 
@@ -46,6 +50,8 @@ struct TaskManagerInner {
     tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
     current_task: usize,
+    sys_call_times: [[u32; MAX_SYSCALL_NUM]; 1024],
+    start_time: [usize; 1024],
 }
 
 lazy_static! {
@@ -64,6 +70,8 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    sys_call_times: [[0; MAX_SYSCALL_NUM]; 1024],
+                    start_time: [0; 1024],
                 })
             },
         }
@@ -80,6 +88,7 @@ impl TaskManager {
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
+        inner.start_time[0] = get_time_us();
         drop(inner);
         let mut _unused = TaskContext::zero_init();
         // before this, we should drop local variables that must be dropped manually
@@ -143,6 +152,9 @@ impl TaskManager {
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
+            if inner.start_time[next] == 0 {
+                inner.start_time[next] = get_time_us();
+            }
             drop(inner);
             // before this, we should drop local variables that must be dropped manually
             unsafe {
@@ -152,6 +164,63 @@ impl TaskManager {
         } else {
             panic!("All applications completed!");
         }
+    }
+
+    fn get_sys_call_times(&self) -> [u32; MAX_SYSCALL_NUM] {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+
+        inner.sys_call_times[current].clone()
+    }
+
+    fn inc_sys_call_times(&self, call_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.sys_call_times[current][call_id] += 1;
+    }
+
+    fn get_task_start_time(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+
+        inner.start_time[current]
+    }
+
+    fn get_task_status(&self) -> TaskStatus {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+
+        inner.tasks[current].task_status
+    }
+
+    fn mem_map(&self, vstart: VirtAddr, vend: VirtAddr, prop: usize) -> bool {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let mut pers = MapPermission::empty();
+        if prop & 0x1 == 0x1 {
+            pers |= MapPermission::R;
+        }
+        if prop & 0x2 == 0x2 {
+            pers |= MapPermission::W;
+        }
+        if prop & 0x4 == 0x4 {
+            pers |= MapPermission::X;
+        }
+        pers |= MapPermission::U;
+        if !vstart.aligned() {
+            return false;
+        }
+        if inner.tasks[current].memory_set.is_mapped(vstart, vend) {
+            return false;
+        }
+        inner.tasks[current].memory_set.insert_framed_area(vstart, vend, pers);
+        true
+    }
+
+    fn mem_unmap(&self, vstart: VirtAddr, vend: VirtAddr) -> bool {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.remove_frame(vstart, vend)
     }
 }
 
@@ -201,4 +270,38 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+
+/// get sys call times
+pub fn get_sys_call_times() -> [u32; MAX_SYSCALL_NUM] {
+    TASK_MANAGER.get_sys_call_times()
+}
+
+/// inc sys call tiems
+pub fn inc_sys_call_times(call_id: usize) {
+    TASK_MANAGER.inc_sys_call_times(call_id);
+}
+
+/// get task status
+pub fn get_task_status() -> TaskStatus {
+    TASK_MANAGER.get_task_status()
+}
+
+/// get task run time
+pub fn get_task_run_time() -> usize {
+    let cur_time = get_time_us();
+    let task_start = TASK_MANAGER.get_task_start_time();
+
+    (cur_time - task_start) / 1000
+}
+
+/// abc
+pub fn task_mm_map(vstart: VirtAddr, vend: VirtAddr, prop: usize) -> bool {
+    TASK_MANAGER.mem_map(vstart, vend, prop)
+}
+
+/// abc
+pub fn task_unmap(vstart: VirtAddr, vend: VirtAddr) -> bool {
+    TASK_MANAGER.mem_unmap(vstart, vend)
 }
