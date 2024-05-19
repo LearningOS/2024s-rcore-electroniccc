@@ -124,9 +124,8 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
     // ---- release current PCB automatically
 }
 
-
-fn mem_cpy_to_user_ph(user_ph_addr: *mut u8, kernel_addr: *const u8, len: usize) {
-    let token = current_user_token();
+/// abc
+pub fn mem_cpy_to_user_ph(token: usize, user_ph_addr: *mut u8, kernel_addr: *const u8, len: usize) {
     unsafe {
         for i in 0..len {
             ptr::write(vaddr_to_pddr_u8(token, user_ph_addr.add(i)), *kernel_addr.add(i));
@@ -148,7 +147,7 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
         usec: us % 1_000_000,
     };
     let time_val_ptr: *const TimeVal = &time_val;
-    mem_cpy_to_user_ph(ts as *mut u8, time_val_ptr as *const u8, 16);
+    mem_cpy_to_user_ph(current_user_token(), ts as *mut u8, time_val_ptr as *const u8, 16);
     0
 }
 
@@ -166,7 +165,7 @@ pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
         time: get_task_run_time(),
     };
     let kti_ptr: *const TaskInfo = &kti;
-    mem_cpy_to_user_ph(ti as *mut u8, kti_ptr as *const u8, 2016);
+    mem_cpy_to_user_ph(current_user_token(), ti as *mut u8, kti_ptr as *const u8, 2016);
     0
 }
 
@@ -233,8 +232,9 @@ pub fn sys_spawn(path: *const u8) -> isize {
 
     let token = current_user_token();
     let path = translated_str(token, path);
-    if let Some(data) = get_app_data_by_name(path.as_str()) {
-        new_task.exec(data);
+    if let Some(app_inode) =  open_file(path.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
+        new_task.exec(all_data.as_slice());
     } else {
         return -1;
     }
