@@ -48,6 +48,33 @@ impl MemorySet {
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
+    /// abc
+    pub fn is_mapped(&self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        for area in &self.areas{
+            if area.vpn_range.get_start() >= start_va.floor() && area.vpn_range.get_end() <= end_va.ceil() {
+                return true;
+            } 
+        }
+        false
+    }
+    /// abc
+    pub fn remove_frame(
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr
+    ) -> bool {
+        if let Some(idx) = self.areas.iter().position(|item| {
+            item.vpn_range.get_start() == start_va.floor() && item.vpn_range.get_end() == end_va.ceil()
+        }) {
+            for vpn in VPNRange::new(start_va.floor(), end_va.ceil()) {
+                self.areas[idx].unmap_one(&mut self.page_table, vpn);
+            }
+            self.areas.remove(idx);
+            return true
+        }
+        false
+    }
+    
     /// Assume that no conflicts.
     pub fn insert_framed_area(
         &mut self,
