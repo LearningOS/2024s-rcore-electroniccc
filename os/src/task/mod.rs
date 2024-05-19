@@ -32,6 +32,12 @@ pub use task::{TaskControlBlock, TaskStatus};
 
 pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 pub use manager::add_task;
+pub use manager::inc_sys_call_times;
+pub use manager::get_task_status;
+pub use manager::get_sys_call_times;
+pub use manager::get_task_run_time;
+pub use manager::task_mm_map;
+pub use manager::task_unmap;
 pub use processor::{
     current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
     Processor,
@@ -46,6 +52,7 @@ pub fn suspend_current_and_run_next() {
     let task_cx_ptr = &mut task_inner.task_cx as *mut TaskContext;
     // Change status to Ready
     task_inner.task_status = TaskStatus::Ready;
+    task_inner.stride += 0x100000 / task_inner.priority;
     drop(task_inner);
     // ---- release current PCB
 
