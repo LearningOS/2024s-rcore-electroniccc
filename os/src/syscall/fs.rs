@@ -3,6 +3,8 @@ use crate::fs::{open_file, OpenFlags, Stat};
 use crate::mm::{translated_byte_buffer, translated_str, UserBuffer};
 use crate::task::{current_task, current_user_token};
 use crate::syscall::process::mem_cpy_to_user_ph;
+use crate::fs::linkat;
+use crate::fs::unlinkat;
 
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     trace!("kernel:pid[{}] sys_write", current_task().unwrap().pid.0);
@@ -110,7 +112,7 @@ pub fn sys_linkat(old_name: *const u8, new_name: *const u8) -> isize {
     let token = current_user_token();
     let old = translated_str(token, old_name);
     let new = translated_str(token, new_name);
-    if crate::fs::linkat(&old, &new).is_some() {
+    if linkat(&old, &new).is_some() {
         0
     } else {
         -1
@@ -125,7 +127,7 @@ pub fn sys_unlinkat(name: *const u8) -> isize {
     // );
     // -1
     let token = current_user_token();
-    if crate::fs::unlinkat(&translated_str(token, name)) {
+    if unlinkat(&translated_str(token, name)) {
         0
     } else {
         -1

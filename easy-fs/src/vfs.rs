@@ -207,21 +207,20 @@ impl Inode {
 
         let (block_id, block_offset) = fs.get_disk_inode_pos(old_inode_id);
         block_cache_sync_all();
-        // return inode
+
         Some(Arc::new(Self::new(
             block_id,
             block_offset,
             self.fs.clone(),
             self.block_device.clone(),
         )))
-        // release efs lock automatically by compiler
     }
 
     /// abc
     pub fn get_inode_id(&self, name: &str) -> Option<u32> {
         let _fs = self.fs.lock();
         self.read_disk_inode(|root_inode| {
-            // assert it is a root directory
+
             assert!(root_inode.is_dir());
             let file_count = (root_inode.size as usize) / DIRENT_SZ;
             for i in 0..file_count {
@@ -260,10 +259,6 @@ impl Inode {
 
     /// abc
     pub fn unlinkat(&self, name: &str) -> bool {
-        self.remove_file(name)
-    }
-
-    fn remove_file(&self, name: &str) -> bool {
         self.modify_disk_inode(|root_inode| {
             // assert it is a root directory
             assert!(root_inode.is_dir());
