@@ -1,3 +1,5 @@
+use core::ptr;
+
 use crate::{
     config::MAX_SYSCALL_NUM,
     fs::{open_file, OpenFlags},
@@ -8,6 +10,8 @@ use crate::{
     },
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
+use crate::mm::vaddr_to_pddr_u8;
+use crate::timer::get_time_us;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -157,19 +161,34 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
     }
 }
 
+/// abc
+pub fn mem_cpy_to_user_ph(token: usize, user_ph_addr: *mut u8, kernel_addr: *const u8, len: usize) {
+    unsafe {
+        for i in 0..len {
+            ptr::write(vaddr_to_pddr_u8(token, user_ph_addr.add(i)), *kernel_addr.add(i));
+        }
+    }
+}
+
 /// get_time syscall
 ///
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
         current_task().unwrap().process.upgrade().unwrap().getpid()
     );
-    -1
+    let us = get_time_us();
+    let time_val = TimeVal{
+        sec: us / 1_000_000,
+        usec: us % 1_000_000,
+    };
+    let time_val_ptr: *const TimeVal = &time_val;
+    mem_cpy_to_user_ph(current_user_token(), ts as *mut u8, time_val_ptr as *const u8, 16);
+    0
 }
-
 /// task_info syscall
 ///
 /// YOUR JOB: Finish sys_task_info to pass testcases

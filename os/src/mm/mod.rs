@@ -22,6 +22,7 @@ pub use page_table::{
     translated_byte_buffer, translated_ref, translated_refmut, translated_str, PageTable,
     PageTableEntry, UserBuffer, UserBufferIterator,
 };
+pub use page_table::vaddr_to_pddr_u8;
 
 /// initiate heap allocator, frame allocator and kernel space
 pub fn init() {
